@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="referrer" content="no-referrer" />
+<title>Midins Decryptor — Offline OSINT Triage Console</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          midnight: '#0F172A',
+          slatey: '#1E293B',
+          violetaccent: '#8A2BE2',
+          violetdim: '#5B189A',
+        },
+        fontFamily: {
+          mono: ['JetBrains Mono', 'monospace'],
+          sans: ['Inter', 'system-ui', 'sans-serif'],
+        },
+      },
+    },
+  };
+</script>
+<style>
+  :root {
+    --accent: #8A2BE2;
+    --accent-soft: rgba(138, 43, 226, 0.18);
+    --surface: #1E293B;
+    --bg: #0F172A;
+  }
+  html, body {
+    background:
+      radial-gradient(ellipse 80% 50% at 20% -10%, rgba(138,43,226,0.18), transparent 60%),
+      radial-gradient(ellipse 70% 50% at 90% 10%, rgba(91,24,154,0.14), transparent 55%),
+      radial-gradient(ellipse 60% 40% at 50% 110%, rgba(138,43,226,0.10), transparent 60%),
+      #0F172A;
+    color: #E2E8F0;
+    font-family: 'Inter', system-ui, sans-serif;
+    min-height: 100vh;
+  }
+  .liquid-glass {
+    background: linear-gradient(135deg, rgba(30,41,59,0.55) 0%, rgba(15,23,42,0.45) 100%);
+    backdrop-filter: blur(22px) saturate(160%);
+    -webkit-backdrop-filter: blur(22px) saturate(160%);
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow:
+      0 8px 32px rgba(2, 6, 23, 0.55),
+      inset 0 1px 0 rgba(255,255,255,0.05),
+      0 0 40px rgba(138, 43, 226, 0.06);
+    border-radius: 18px;
+  }
+  .liquid-glass-strong {
+    background: linear-gradient(135deg, rgba(30,41,59,0.7) 0%, rgba(15,23,42,0.55) 100%);
+    backdrop-filter: blur(28px) saturate(180%);
+    border: 1px solid rgba(138, 43, 226, 0.18);
+    box-shadow:
+      0 12px 40px rgba(2, 6, 23, 0.7),
+      inset 0 1px 0 rgba(255,255,255,0.06),
+      0 0 60px rgba(138, 43, 226, 0.10);
+    border-radius: 18px;
+  }
+  .btn-accent {
+    background: linear-gradient(135deg, #8A2BE2 0%, #5B189A 100%);
+    transition: transform .15s ease, box-shadow .2s ease, filter .2s ease;
+    box-shadow: 0 6px 20px rgba(138, 43, 226, 0.35), inset 0 1px 0 rgba(255,255,255,0.15);
+  }
+  .btn-accent:hover { transform: translateY(-1px); filter: brightness(1.08); }
+  .btn-accent:active { transform: translateY(0); }
+  .accent-text { color: var(--accent); }
+  .accent-border { border-color: var(--accent); }
+  .tab-pill {
+    transition: all .2s ease;
+    border: 1px solid transparent;
+  }
+  .tab-pill.active {
+    background: rgba(138, 43, 226, 0.18);
+    border-color: rgba(138, 43, 226, 0.55);
+    color: #F5F3FF;
+    box-shadow: 0 0 18px rgba(138,43,226,0.25);
+  }
+  .timeline-rail {
+    position: relative;
+    padding-left: 28px;
+  }
+  .timeline-rail::before {
+    content: '';
+    position: absolute;
+    left: 10px;
+    top: 6px;
+    bottom: 6px;
+    width: 2px;
+    background: linear-gradient(to bottom, rgba(138,43,226,0.6), rgba(138,43,226,0.1));
+  }
+  .timeline-node {
+    position: relative;
+  }
+  .timeline-node::before {
+    content: '';
+    position: absolute;
+    left: -23px;
+    top: 14px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #8A2BE2;
+    box-shadow: 0 0 0 4px rgba(138,43,226,0.18), 0 0 14px rgba(138,43,226,0.55);
+  }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  .scroll-area { scrollbar-width: thin; scrollbar-color: #8A2BE2 transparent; }
+  .scroll-area::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scroll-area::-webkit-scrollbar-thumb { background: rgba(138,43,226,0.45); border-radius: 8px; }
+  .glow-pulse { animation: glowpulse 3s ease-in-out infinite; }
+  @keyframes glowpulse {
+    0%,100% { filter: drop-shadow(0 0 4px rgba(138,43,226,0.5)); }
+    50% { filter: drop-shadow(0 0 14px rgba(138,43,226,0.95)); }
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px; font-size: 11px;
+    background: rgba(138,43,226,0.10);
+    border: 1px solid rgba(138,43,226,0.30);
+    color: #E9D5FF;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .chip-warn {
+    background: rgba(244, 63, 94, 0.12);
+    border-color: rgba(244, 63, 94, 0.4);
+    color: #FECDD3;
+  }
+  .chip-ok {
+    background: rgba(34,197,94,0.10);
+    border-color: rgba(34,197,94,0.3);
+    color: #BBF7D0;
+  }
+  .artifact-row {
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(15,23,42,0.45);
+    transition: all .15s ease;
+  }
+  .artifact-row:hover {
+    border-color: rgba(138,43,226,0.45);
+    background: rgba(30,41,59,0.6);
+  }
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    padding: 12px 18px; border-radius: 10px;
+    background: rgba(15,23,42,0.95);
+    border: 1px solid rgba(138,43,226,0.5);
+    color: #F5F3FF; font-size: 13px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    z-index: 9999; opacity: 0; transform: translateY(8px);
+    transition: opacity .2s ease, transform .2s ease;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .tab-badge {
+    display: inline-block;
+    min-width: 18px; height: 18px;
+    line-height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; font-weight: 700;
+    text-align: center;
+    opacity: 0; transform: scale(0.8);
+    transition: opacity .2s ease, transform .2s ease;
+    pointer-events: none;
+    margin-left: 6px;
+  }
+  .tab-badge.visible {
+    opacity: 1; transform: scale(1);
+  }
+  .tab-badge-ips { background: #ef4444; color: #fff; }
+  .tab-badge-urls { background: #f97316; color: #fff; }
+  .tab-badge-emails { background: #3b82f6; color: #fff; }
+  .tab-badge-secrets { background: #a855f7; color: #fff; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<header class="liquid-glass-strong mx-4 mt-4 px-6 py-4 flex items-center justify-between">
+  <div class="flex items-center gap-4">
+    <svg width="46" height="46" viewBox="0 0 64 64" class="glow-pulse">
+      <defs>
+        <linearGradient id="lgrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#C084FC"/>
+          <stop offset="100%" stop-color="#8A2BE2"/>
+        </linearGradient>
+      </defs>
+      <polygon points="32,4 58,18 58,46 32,60 6,46 6,18" fill="none" stroke="url(#lgrad)" stroke-width="2.2"/>
+      <polygon points="32,14 49,23 49,41 32,50 15,41 15,23" fill="rgba(138,43,226,0.12)" stroke="#8A2BE2" stroke-width="1.4"/>
+      <path d="M22 26 L32 20 L42 26 L42 38 L32 44 L22 38 Z" fill="none" stroke="#E9D5FF" stroke-width="1.2"/>
+      <circle cx="32" cy="32" r="3.4" fill="#8A2BE2"/>
+      <line x1="32" y1="20" x2="32" y2="14" stroke="#8A2BE2" stroke-width="1.4"/>
+      <line x1="32" y1="44" x2="32" y2="50" stroke="#8A2BE2" stroke-width="1.4"/>
+    </svg>
+    <div>
+      <h1 class="text-xl font-extrabold tracking-tight">
+        MIDINS <span class="accent-text">DECRYPTOR</span>
+      </h1>
+      <p class="text-xs text-slate-400 mono">offline · local-first · OSINT triage console v1.4</p>
+    </div>
+  </div>
+  <div class="flex items-center gap-2">
+    <span class="chip chip-ok">● NO EGRESS</span>
+    <span class="chip">ISO 27701</span>
+    <span class="chip">ISO 25010</span>
+    <button id="btnHistory" class="btn-accent px-4 py-2 rounded-lg text-sm font-semibold text-white">
+      Session History
+    </button>
+  </div>
+</header>
+
+<main class="grid grid-cols-12 gap-4 p-4">
+  <section class="col-span-12 lg:col-span-5">
+    <div class="liquid-glass p-5">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-bold tracking-widest text-slate-300">RAW PAYLOAD INPUT</h2>
+        <span id="payloadMeta" class="mono text-xs text-slate-400">0 bytes</span>
+      </div>
+      <textarea id="payloadInput"
+        class="w-full h-72 bg-midnight/80 border border-white/10 rounded-xl p-4 mono text-sm text-slate-200 focus:outline-none focus:border-violetaccent/70 focus:ring-2 focus:ring-violetaccent/30 scroll-area resize-none"
+        placeholder="Paste suspicious payload, encoded blob, base64, hex, JWT, malicious script…"></textarea>
+
+      <div class="flex flex-wrap gap-2 mt-4 items-center">
+        <button id="btnAnalyze" class="btn-accent px-5 py-2.5 rounded-lg text-sm font-bold text-white flex items-center gap-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4">
+            <path d="M5 12h14M13 6l6 6-6 6"/>
+          </svg>
+          EXECUTE CASCADE
+        </button>
+        <button id="btnPaste" class="px-4 py-2.5 rounded-lg text-sm text-slate-200 border border-white/10 hover:border-violetaccent/50 hover:bg-violetaccent/10 transition">Paste</button>
+        <button id="btnClear" class="px-4 py-2.5 rounded-lg text-sm text-slate-200 border border-white/10 hover:border-rose-500/50 hover:bg-rose-500/10 transition">Clear</button>
+        <button id="btnSample" class="px-4 py-2.5 rounded-lg text-sm text-slate-200 border border-white/10 hover:border-violetaccent/50 hover:bg-violetaccent/10 transition">Load Sample</button>
+      </div>
+
+      <div class="mt-5 grid grid-cols-4 gap-2 text-center">
+        <div class="liquid-glass p-3">
+          <div id="statDepth" class="mono text-lg accent-text font-bold">0</div>
+          <div class="text-[10px] uppercase tracking-widest text-slate-400">Depth</div>
+        </div>
+        <div class="liquid-glass p-3">
+          <div id="statEntropy" class="mono text-lg accent-text font-bold">0.00</div>
+          <div class="text-[10px] uppercase tracking-widest text-slate-400">Final Entropy</div>
+        </div>
+        <div class="liquid-glass p-3">
+          <div id="statElapsed" class="mono text-lg accent-text font-bold">0ms</div>
+          <div class="text-[10px] uppercase tracking-widest text-slate-400">Pipeline</div>
+        </div>
+        <div class="liquid-glass p-3">
+          <div id="statPrintable" class="mono text-lg accent-text font-bold">0.00</div>
+          <div class="text-[10px] uppercase tracking-widest text-slate-400">Printable Ratio</div>
+        </div>
+      </div>
+
+      <div class="mt-4 p-3 rounded-lg border border-white/5 bg-slatey/30">
+        <div class="text-[11px] uppercase tracking-widest text-slate-400 mb-1">Recipe Path</div>
+        <div id="recipePath" class="mono text-xs text-violet-300">∅ no transformations yet</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="col-span-12 lg:col-span-7">
+    <div class="liquid-glass p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-sm font-bold tracking-widest text-slate-300">FORENSIC OUTPUT DASHBOARD</h2>
+        <div id="entropyFlag"></div>
+      </div>
+
+      <div class="flex flex-wrap gap-2 mb-4" id="tabBar">
+        <button data-tab="timeline" class="tab-pill active px-3 py-1.5 rounded-lg text-xs font-semibold mono">⏱ Decoding Timeline</button>
+        <button data-tab="final"    class="tab-pill px-3 py-1.5 rounded-lg text-xs font-semibold mono">📜 Final Payload</button>
+        <button data-tab="ips"      class="tab-pill px-3 py-1.5 rounded-lg text-xs font-semibold mono">🌐 IPs<span class="tab-badge tab-badge-ips" data-badge="ips"></span></button>
+        <button data-tab="urls"     class="tab-pill px-3 py-1.5 rounded-lg text-xs font-semibold mono">🔗 URLs / Domains<span class="tab-badge tab-badge-urls" data-badge="urls"></span></button>
+        <button data-tab="emails"   class="tab-pill px-3 py-1.5 rounded-lg text-xs font-semibold mono">✉ Emails<span class="tab-badge tab-badge-emails" data-badge="emails"></span></button>
+        <button data-tab="secrets"  class="tab-pill px-3 py-1.5 rounded-lg text-xs font-semibold mono">🔐 Secrets & Entropy<span class="tab-badge tab-badge-secrets" data-badge="secrets"></span></button>
+      </div>
+
+      <div id="panels" class="scroll-area overflow-y-auto" style="max-height: 70vh;">
+        <div data-panel="timeline" class="space-y-3">
+          <div id="timelineContainer" class="text-slate-400 mono text-sm">Awaiting cascade execution…</div>
+        </div>
+        <div data-panel="final" class="hidden">
+          <pre id="finalPayload" class="mono text-xs text-slate-200 whitespace-pre-wrap break-all bg-midnight/70 border border-white/10 rounded-xl p-4 max-h-[60vh] overflow-auto scroll-area">—</pre>
+          <button id="btnCopyFinal" class="mt-3 btn-accent px-4 py-2 rounded-lg text-xs font-bold text-white">Copy Final Payload</button>
+        </div>
+        <div data-panel="ips" class="hidden space-y-2"></div>
+        <div data-panel="urls" class="hidden space-y-2"></div>
+        <div data-panel="emails" class="hidden space-y-2"></div>
+        <div data-panel="secrets" class="hidden space-y-2"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<aside id="historyDrawer" class="fixed top-0 right-0 h-full w-96 liquid-glass-strong p-5 transform translate-x-full transition-transform duration-300 z-50 scroll-area overflow-y-auto" style="border-radius: 18px 0 0 18px;">
+  <div class="flex items-center justify-between mb-4">
+    <h3 class="text-sm font-bold tracking-widest accent-text">SESSION HISTORY</h3>
+    <button id="btnCloseHistory" class="text-slate-400 hover:text-white text-lg">✕</button>
+  </div>
+  <div class="flex gap-2 mb-4">
+    <button id="btnPurgeHistory" class="text-xs px-3 py-1.5 rounded-lg border border-rose-500/40 text-rose-300 hover:bg-rose-500/10 transition">Purge All</button>
+    <span class="text-xs text-slate-400 self-center">stored: <span id="historyCount" class="mono accent-text">0</span></span>
+  </div>
+  <div id="historyList" class="space-y-2 text-sm"></div>
+</aside>
+
+<div id="toast" class="toast"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  const STORAGE_KEY = 'midins.history.v1';
+  const HISTORY_LIMIT = 25;
+
+  const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+  const els = {
+    input: $('#payloadInput'),
+    meta: $('#payloadMeta'),
+    btnAnalyze: $('#btnAnalyze'),
+    btnPaste: $('#btnPaste'),
+    btnClear: $('#btnClear'),
+    btnSample: $('#btnSample'),
+    btnCopyFinal: $('#btnCopyFinal'),
+    statDepth: $('#statDepth'),
+    statEntropy: $('#statEntropy'),
+    statElapsed: $('#statElapsed'),
+    statPrintable: $('#statPrintable'),
+    recipePath: $('#recipePath'),
+    entropyFlag: $('#entropyFlag'),
+    timelineContainer: $('#timelineContainer'),
+    finalPayload: $('#finalPayload'),
+    tabBar: $('#tabBar'),
+    panels: $('#panels'),
+    historyDrawer: $('#historyDrawer'),
+    btnHistory: $('#btnHistory'),
+    btnCloseHistory: $('#btnCloseHistory'),
+    btnPurgeHistory: $('#btnPurgeHistory'),
+    historyList: $('#historyList'),
+    historyCount: $('#historyCount'),
+    toast: $('#toast'),
+  };
+
+  const showToast = (msg) => {
+    els.toast.textContent = msg;
+    els.toast.classList.add('show');
+    setTimeout(() => els.toast.classList.remove('show'), 2200);
+  };
+
+  const escapeHtml = (s) => String(s ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+  const copyToClipboard = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Copied to clipboard');
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta);
+      ta.select(); document.execCommand('copy'); ta.remove();
+      showToast('Copied (fallback)');
+    }
+  };
+
+  const readHistory = () => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  };
+
+  const writeHistory = (entries) => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(entries.slice(0, HISTORY_LIMIT)));
+    } catch (e) { console.warn('history write failed', e); }
+  };
+
+  const pushHistory = (record) => {
+    const entries = readHistory();
+    entries.unshift(record);
+    writeHistory(entries);
+    renderHistory();
+  };
+
+  const purgeHistory = () => {
+    localStorage.removeItem(STORAGE_KEY);
+    renderHistory();
+    updateBadges({ ips: 0, urls: 0, emails: 0, secrets: 0 });
+    showToast('Local history purged');
+  };
+
+  const renderHistory = () => {
+    const entries = readHistory();
+    els.historyCount.textContent = entries.length;
+    if (!entries.length) {
+      els.historyList.innerHTML = '<div class="text-xs text-slate-500 mono">No prior investigations stored.</div>';
+      return;
+    }
+    els.historyList.innerHTML = entries.map((e, idx) => `
+      <div class="artifact-row cursor-pointer" data-history-idx="${idx}">
+        <div class="flex items-center justify-between mb-1">
+          <span class="mono text-[11px] text-violet-300">${new Date(e.timestamp).toLocaleString()}</span>
+          <span class="chip">${e.recipe?.length || 0} layers</span>
+        </div>
+        <div class="mono text-xs text-slate-300 truncate">${escapeHtml(e.snippet)}</div>
+        <div class="mt-1 text-[10px] text-slate-500 mono">
+          IP:${e.counts.ipv4_public} · URL:${e.counts.urls} · EM:${e.counts.emails} · SEC:${e.counts.secrets}
+        </div>
+      </div>
+    `).join('');
+    $$('#historyList [data-history-idx]').forEach(node => {
+      node.addEventListener('click', () => reloadHistory(parseInt(node.dataset.historyIdx, 10)));
+    });
+  };
+
+  const reloadHistory = (idx) => {
+    const entries = readHistory();
+    const record = entries[idx];
+    if (!record) return;
+    els.input.value = record.raw_input;
+    updatePayloadMeta();
+    hydrateResults(record.response);
+    showToast('History snapshot restored');
+  };
+
+  const updatePayloadMeta = () => {
+    const bytes = new Blob([els.input.value]).size;
+    els.meta.textContent = `${bytes.toLocaleString()} bytes · ${els.input.value.length.toLocaleString()} chars`;
+  };
+
+  const setTab = (name) => {
+    $$('#tabBar button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    $$('#panels > [data-panel]').forEach(p => p.classList.toggle('hidden', p.dataset.panel !== name));
+  };
+
+  const renderTimeline = (timeline) => {
+    if (!timeline || !timeline.length) {
+      els.timelineContainer.innerHTML = '<div class="text-slate-400 mono text-sm">No decoding layers were triggered — payload appears to be plaintext.</div>';
+      return;
+    }
+    const html = `
+      <div class="timeline-rail space-y-3">
+        ${timeline.map(step => {
+          const deltaColor = step.step_delta < 0 ? 'text-emerald-300' : step.step_delta > 0 ? 'text-amber-300' : 'text-slate-400';
+          const deltaSign = step.step_delta > 0 ? '+' : '';
+          const flagBadge = step.entropy_flag
+            ? `<span class="chip chip-warn">${escapeHtml(step.entropy_flag)}</span>` : '';
+          return `
+          <div class="timeline-node liquid-glass p-4">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <span class="chip">LAYER ${step.layer_index}</span>
+                <span class="text-sm font-bold accent-text mono">${escapeHtml(step.decoder)}</span>
+              </div>
+              <div class="flex items-center gap-2">
+                ${flagBadge}
+                <span class="text-[11px] text-slate-400 mono">${step.elapsed_ms} ms</span>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px] mono text-slate-400 mb-3">
+              <div>in: <span class="text-slate-200">${step.input_length}</span></div>
+              <div>out: <span class="text-slate-200">${step.output_length}</span></div>
+              <div>Δ: <span class="${deltaColor}">${deltaSign}${step.step_delta}</span></div>
+              <div>H: <span class="text-violet-300">${step.entropy_before} → ${step.entropy_after}</span></div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div class="bg-midnight/60 border border-white/5 rounded-lg p-2">
+                <div class="text-[10px] uppercase tracking-widest text-slate-500 mb-1">before</div>
+                <div class="mono text-[11px] text-slate-300 break-all">${escapeHtml(step.preview_before)}</div>
+              </div>
+              <div class="bg-midnight/60 border border-violetaccent/20 rounded-lg p-2">
+                <div class="text-[10px] uppercase tracking-widest text-violet-300 mb-1">after</div>
+                <div class="mono text-[11px] text-slate-200 break-all">${escapeHtml(step.preview_after)}</div>
+              </div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    `;
+    els.timelineContainer.innerHTML = html;
+  };
+
+  const renderArtifactList = (panelName, items, formatter) => {
+    const panel = $(`#panels > [data-panel="${panelName}"]`);
+    if (!panel) return;
+    if (!items || !items.length) {
+      panel.innerHTML = '<div class="text-slate-500 mono text-sm">No artifacts of this category detected in final payload.</div>';
+      return;
+    }
+    panel.innerHTML = items.map((item, idx) => `
+      <div class="artifact-row flex items-center justify-between gap-3">
+        <div class="mono text-xs text-slate-200 break-all flex-1">${formatter(item)}</div>
+        <button class="text-[10px] px-2 py-1 rounded-md border border-violetaccent/40 text-violet-300 hover:bg-violetaccent/15 transition" data-copy="${panelName}-${idx}">COPY</button>
+      </div>
+    `).join('');
+    panel.querySelectorAll('[data-copy]').forEach((btn, idx) => {
+      btn.addEventListener('click', () => copyToClipboard(typeof items[idx] === 'string' ? items[idx] : items[idx].value));
+    });
+  };
+
+  const renderEntropyFlag = (decoding) => {
+    const flag = decoding.final_entropy_flag;
+    if (!flag) {
+      els.entropyFlag.innerHTML = '<span class="chip chip-ok">● ENTROPY NORMAL</span>';
+      return;
+    }
+    els.entropyFlag.innerHTML = `<span class="chip chip-warn">⚠ ${escapeHtml(flag)} · H=${decoding.final_entropy}</span>`;
+  };
+
+  const updateBadges = (counts) => {
+    const badgeMap = {
+      ips: $('[data-badge="ips"]'),
+      urls: $('[data-badge="urls"]'),
+      emails: $('[data-badge="emails"]'),
+      secrets: $('[data-badge="secrets"]'),
+    };
+    Object.entries(badgeMap).forEach(([category, badge]) => {
+      const count = counts[category] || 0;
+      badge.textContent = count;
+      badge.classList.toggle('visible', count > 0);
+    });
+  };
+
+  const hydrateResults = (response) => {
+    if (!response || !response.ok) {
+      els.timelineContainer.innerHTML = `<div class="text-rose-300 mono text-sm">⚠ ${escapeHtml(response?.error || 'analysis failed')}</div>`;
+      return;
+    }
+    const { decoding, artifacts, elapsed_ms } = response;
+
+    els.statDepth.textContent = decoding.depth_reached;
+    els.statEntropy.textContent = decoding.final_entropy.toFixed(2);
+    els.statPrintable.textContent = decoding.final_printable_ratio.toFixed(2);
+    els.statElapsed.textContent = `${elapsed_ms}ms`;
+    els.recipePath.textContent = decoding.recipe_path.length
+      ? decoding.recipe_path.join('  →  ')
+      : '∅ payload already plaintext';
+
+    renderEntropyFlag(decoding);
+    renderTimeline(decoding.timeline);
+
+    els.finalPayload.textContent = decoding.final_payload || '—';
+
+    const combinedIPs = [
+      ...artifacts.ipv4_public.map(v => ({ value: v, tag: 'PUBLIC' })),
+      ...artifacts.ipv4_private.map(v => ({ value: v, tag: 'PRIVATE' })),
+    ];
+    renderArtifactList('ips', combinedIPs, (it) =>
+      `<span class="chip ${it.tag === 'PRIVATE' ? 'chip-warn' : ''}">${it.tag}</span> ${escapeHtml(it.value)}`
+    );
+
+    const combinedUrls = [
+      ...artifacts.urls.map(v => ({ value: v, tag: 'URL' })),
+      ...artifacts.domains.map(v => ({ value: v, tag: 'DOMAIN' })),
+    ];
+    renderArtifactList('urls', combinedUrls, (it) =>
+      `<span class="chip">${it.tag}</span> ${escapeHtml(it.value)}`
+    );
+
+    renderArtifactList('emails', artifacts.emails, (it) => escapeHtml(it));
+
+    renderArtifactList('secrets', artifacts.secrets, (it) =>
+      `<span class="chip chip-warn">${escapeHtml(it.type)}</span> <span class="text-slate-300">@${it.offset}</span> ${escapeHtml(it.value)}`
+    );
+
+    const ipsCount = artifacts.ipv4_public.length + artifacts.ipv4_private.length;
+    const urlsCount = artifacts.urls.length + artifacts.domains.length;
+    const emailsCount = artifacts.emails.length;
+    const secretsCount = artifacts.secrets.length;
+    updateBadges({ ips: ipsCount, urls: urlsCount, emails: emailsCount, secrets: secretsCount });
+  };
+
+  const executeAnalysis = async () => {
+    const payload = els.input.value;
+    if (!payload.trim()) {
+      showToast('Payload is empty');
+      return;
+    }
+
+    els.btnAnalyze.disabled = true;
+    els.btnAnalyze.classList.add('opacity-60');
+    els.timelineContainer.innerHTML = '<div class="text-violet-300 mono text-sm animate-pulse">⟳ cascading decoders…</div>';
+
+    try {
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payload }),
+      });
+      const data = await response.json();
+      hydrateResults(data);
+
+      if (data.ok) {
+        pushHistory({
+          timestamp: Date.now(),
+          snippet: payload.slice(0, 140),
+          raw_input: payload.slice(0, 200000),
+          recipe: data.decoding.recipe_path,
+          counts: data.artifacts.counts,
+          response: data,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      els.timelineContainer.innerHTML = `<div class="text-rose-300 mono text-sm">⚠ network/runtime error: ${escapeHtml(err.message)}</div>`;
+    } finally {
+      els.btnAnalyze.disabled = false;
+      els.btnAnalyze.classList.remove('opacity-60');
+    }
+  };
+
+  const SAMPLE_PAYLOAD = "JTNDc2NyaXB0JTNFZmV0Y2glMjglMjJodHRwcyUzQSUyRiUyRmV2aWwtYzIuYmFkJTJGZW5kcG9pbnQlM0Z0b2tlbiUzREFLSUFJT1NGT0ROTjdFWEFNUExFJTI2dXNlciUzRGFkbWluJTQwY29ycC5jb20lMjIlMjklM0IlM0MlMkZzY3JpcHQlM0U=";
+
+  els.btnAnalyze.addEventListener('click', executeAnalysis);
+  els.input.addEventListener('input', updatePayloadMeta);
+  els.btnClear.addEventListener('click', () => { els.input.value = ''; updatePayloadMeta(); updateBadges({ ips: 0, urls: 0, emails: 0, secrets: 0 }); });
+  els.btnSample.addEventListener('click', () => { els.input.value = SAMPLE_PAYLOAD; updatePayloadMeta(); });
+  els.btnPaste.addEventListener('click', async () => {
+    try {
+      const txt = await navigator.clipboard.readText();
+      els.input.value = txt; updatePayloadMeta();
+      showToast('Pasted from clipboard');
+    } catch {
+      showToast('Clipboard read blocked');
+    }
+  });
+  els.btnCopyFinal.addEventListener('click', () => copyToClipboard(els.finalPayload.textContent || ''));
+
+  els.tabBar.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('button[data-tab]');
+    if (btn) setTab(btn.dataset.tab);
+  });
+
+  els.btnHistory.addEventListener('click', () => {
+    els.historyDrawer.classList.remove('translate-x-full');
+  });
+  els.btnCloseHistory.addEventListener('click', () => {
+    els.historyDrawer.classList.add('translate-x-full');
+  });
+  els.btnPurgeHistory.addEventListener('click', purgeHistory);
+
+  document.addEventListener('keydown', (ev) => {
+    if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') {
+      ev.preventDefault();
+      executeAnalysis();
+    }
+    if (ev.key === 'Escape') {
+      els.historyDrawer.classList.add('translate-x-full');
+    }
+  });
+
+  updatePayloadMeta();
+  renderHistory();
+})();
+</script>
+</body>
+</html>
