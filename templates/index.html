@@ -254,10 +254,7 @@
           <div id="statElapsed" class="mono text-lg accent-text font-bold">0ms</div>
           <div class="text-[10px] uppercase tracking-widest text-slate-400">Pipeline</div>
         </div>
-        <div class="liquid-glass p-3">
-          <div id="statPrintable" class="mono text-lg accent-text font-bold">0.00</div>
-          <div class="text-[10px] uppercase tracking-widest text-slate-400">Printable Ratio</div>
-        </div>
+        
       </div>
 
       <div class="mt-4 p-3 rounded-lg border border-white/5 bg-slatey/30">
@@ -335,7 +332,6 @@
     statDepth: $('#statDepth'),
     statEntropy: $('#statEntropy'),
     statElapsed: $('#statElapsed'),
-    statPrintable: $('#statPrintable'),
     recipePath: $('#recipePath'),
     entropyFlag: $('#entropyFlag'),
     timelineContainer: $('#timelineContainer'),
@@ -543,7 +539,6 @@
 
     els.statDepth.textContent = decoding.depth_reached;
     els.statEntropy.textContent = decoding.final_entropy.toFixed(2);
-    els.statPrintable.textContent = decoding.final_printable_ratio.toFixed(2);
     els.statElapsed.textContent = `${elapsed_ms}ms`;
     els.recipePath.textContent = decoding.recipe_path.length
       ? decoding.recipe_path.join('  →  ')

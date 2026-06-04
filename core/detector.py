@@ -72,33 +72,17 @@ def _should_finalize_plaintext(
     buffer: str,
     ignore_printable_ratio: bool = False,
 ) -> Tuple[bool, Dict[str, object]]:
-    printable_ratio = _printable_ascii_ratio(buffer)
     recognized, total_tokens, keyword_ratio = _count_keyword_tokens(buffer)
     contains_spaces = " " in buffer
     has_keyword = recognized > 0
-    if ignore_printable_ratio:
-        if has_keyword or contains_spaces:
-            return True, {
-                "printable_ratio": round(printable_ratio, 4),
-                "recognized_keyword_count": recognized,
-                "keyword_ratio": round(keyword_ratio, 4),
-                "contains_spaces": contains_spaces,
-                "finality_reason": "plaintext_keyword" if has_keyword else "plaintext_space_ratio",
-            }
-    if (
-        printable_ratio >= 0.90 and has_keyword
-    ) or (
-        contains_spaces and printable_ratio >= 0.95
-    ):
+    if has_keyword or contains_spaces:
         return True, {
-            "printable_ratio": round(printable_ratio, 4),
             "recognized_keyword_count": recognized,
             "keyword_ratio": round(keyword_ratio, 4),
             "contains_spaces": contains_spaces,
-            "finality_reason": "plaintext_keyword" if has_keyword else "plaintext_space_ratio",
+            "finality_reason": "plaintext_keyword" if has_keyword else "plaintext_space",
         }
     return False, {
-        "printable_ratio": round(printable_ratio, 4),
         "recognized_keyword_count": recognized,
         "keyword_ratio": round(keyword_ratio, 4),
         "contains_spaces": contains_spaces,
@@ -153,6 +137,32 @@ def _looks_like_hex(payload: str) -> bool:
     return bool(_RX_HEX.match(stripped))
 
 
+def _find_embedded_candidate(buffer: str) -> Optional[str]:
+    # try to find long base64-like substrings first
+    b64_candidates = re.findall(r"[A-Za-z0-9+/]{12,}={0,2}", buffer)
+    if b64_candidates:
+        # prefer the longest candidate that decodes cleanly
+        b64_candidates.sort(key=len, reverse=True)
+        for cand in b64_candidates:
+            stripped = re.sub(r"\s+", "", cand)
+            if len(stripped) % 4 == 0 and _RX_BASE64_STRICT.match(stripped):
+                return cand
+
+    # next try percent-encoded sequences
+    pct = re.findall(r"(?:%[0-9A-Fa-f]{2}){6,}", buffer)
+    if pct:
+        return pct[0]
+
+    # finally try long hex runs
+    hex_candidates = re.findall(r"[0-9A-Fa-f]{8,}", buffer)
+    if hex_candidates:
+        # pick the longest
+        hex_candidates.sort(key=len, reverse=True)
+        return hex_candidates[0]
+
+    return None
+
+
 def _decode_base64(payload: str) -> str:
     if not _looks_like_base64(payload):
         raise _SkipLayer("base64 signature mismatch")
@@ -160,8 +170,6 @@ def _decode_base64(payload: str) -> str:
         stripped = re.sub(r"\s+", "", payload)
         raw = base64.b64decode(stripped, validate=True)
         decoded = raw.decode("utf-8", errors="strict")
-        if _printable_ratio(decoded) < 0.75:
-            raise _SkipLayer("base64 produced binary noise")
         return decoded
     except (binascii.Error, UnicodeDecodeError) as exc:
         raise _SkipLayer(f"base64 failed: {exc}")
@@ -176,8 +184,6 @@ def _decode_base32(payload: str) -> str:
     try:
         raw = base64.b32decode(stripped)
         decoded = raw.decode("utf-8", errors="strict")
-        if _printable_ratio(decoded) < 0.75:
-            raise _SkipLayer("base32 noisy output")
         return decoded
     except (binascii.Error, UnicodeDecodeError) as exc:
         raise _SkipLayer(f"base32 failed: {exc}")
@@ -190,8 +196,6 @@ def _decode_hex(payload: str) -> str:
         stripped = re.sub(r"\s+", "", payload)
         raw = bytes.fromhex(stripped)
         decoded = raw.decode("utf-8", errors="strict")
-        if _printable_ratio(decoded) < 0.75:
-            raise _SkipLayer("hex output binary")
         return decoded
     except (ValueError, UnicodeDecodeError) as exc:
         raise _SkipLayer(f"hex failed: {exc}")
@@ -296,6 +300,29 @@ class CascadeDecoder:
         current = raw_data
         seen_fingerprints = {hash(current)}
 
+        # If the input looks like a larger log blob, try to extract an embedded
+        # encoded candidate (base64/percent-enc/hex) so decoders can operate on it.
+        candidate = _find_embedded_candidate(raw_data)
+        if candidate and candidate != raw_data:
+            elapsed_ms = 0.0
+            timeline.append({
+                "layer_index": 0,
+                "decoder": "extract_candidate",
+                "elapsed_ms": elapsed_ms,
+                "timestamp_ms": round(time.time() * 1000),
+                "input_length": len(raw_data),
+                "output_length": len(candidate),
+                "step_delta": len(candidate) - len(raw_data),
+                "entropy_before": shannon_entropy(raw_data),
+                "entropy_after": shannon_entropy(candidate),
+                "entropy_drop": round(shannon_entropy(raw_data) - shannon_entropy(candidate), 4),
+                "entropy_flag": None,
+                "preview_before": self._snippet(raw_data),
+                "preview_after": self._snippet(candidate),
+            })
+            current = candidate
+            seen_fingerprints = {hash(current)}
+
         pipeline_start = time.perf_counter()
 
         pipeline_finalized = False
@@ -353,7 +380,6 @@ class CascadeDecoder:
                     pipeline_finalized = True
                     plaintext_gate_reason = gate_metadata["finality_reason"]
                     timeline[-1].update({
-                        "printable_ratio": gate_metadata["printable_ratio"],
                         "recognized_keyword_count": gate_metadata["recognized_keyword_count"],
                         "keyword_ratio": gate_metadata["keyword_ratio"],
                         "contains_spaces": gate_metadata["contains_spaces"],
@@ -375,7 +401,6 @@ class CascadeDecoder:
             "final_payload": current,
             "final_entropy": final_entropy,
             "final_entropy_flag": self._classify_entropy(final_entropy, current),
-            "final_printable_ratio": round(_printable_ascii_ratio(current), 4),
             "recipe_path": recipe_path,
             "timeline": timeline,
             "depth_reached": len(recipe_path),
