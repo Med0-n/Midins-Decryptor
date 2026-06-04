@@ -17,6 +17,9 @@
 </div>
 
 ---
+## Screenshot
+
+<img width="2445" height="710" alt="brave_screenshot" src="https://github.com/user-attachments/assets/07c84973-f51b-4e09-aad6-d7ce2391479c" />
 
 ## 🎯 Architecture & Purpose
 
