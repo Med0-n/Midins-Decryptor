@@ -134,7 +134,7 @@ docker run --rm -p 127.0.0.1:5000:5000 --network=none midins-decryptor:1.4
 | Payload size DoS | Hard `MAX_PAYLOAD_BYTES = 2_500_000` ceiling enforced server-side |
 | ReDoS via crafted regex input | All patterns use bounded quantifiers, pre-compiled once at module load |
 | Decoding infinite-loop oscillation | Fingerprint set (hash dedupe) + depth cap (5) |
-| False-positive decode cascade | Plaintext gate computes printable-ASCII ratio after each layer — readable output (≥90% printable + keyword match) stops the pipeline |
+| False-positive | May get some false positive issues but check the timeline ! |
 | Browser exfiltration via 3rd-party script | Strict CSP locks `connect-src 'self'`, no analytics |
 | Cross-tab session leak | LocalStorage scoped to origin, manual purge button always visible |
 | Server-side crash exposing stack | Global exception handler returns structured JSON, never HTML traces |
