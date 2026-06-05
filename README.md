@@ -148,7 +148,6 @@ midins-decryptor/
 ├── app.py                # Flask entrypoint + hardened headers + global error handler
 ├── requirements.txt      # Pinned dependencies
 ├── README.md             # This document
-├── .gitignore            # Excludes __pycache__, .env, .venv, *.pyc, .DS_Store
 ├── core/
 │   ├── __init__.py       # Package surface
 │   ├── detector.py       # Cascade decoder + Shannon entropy + plaintext gate + timeline engine
