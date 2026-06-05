@@ -17,7 +17,7 @@ _RX_IPV4 = re.compile(
     r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b"
 )
 _RX_URL = re.compile(
-    r"\bhttps?://[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+", re.IGNORECASE
+    r"\b(?:https?|mailto)://[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+", re.IGNORECASE
 )
 _RX_FQDN = re.compile(
     r"\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+"

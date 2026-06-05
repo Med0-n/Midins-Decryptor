@@ -2,6 +2,8 @@ import re
 import base64
 import binascii
 import codecs
+import gzip
+import zlib
 import math
 import time
 import logging
@@ -26,7 +28,7 @@ _RX_HEX_ESC = re.compile(r"\\x[0-9A-Fa-f]{2}")
 _RX_ROT_HINT = re.compile(r"^[A-Za-z\s.,!?\-']+$")
 _RX_PRINTABLE = re.compile(r"[\x20-\x7e\r\n\t]")
 _RX_BINARY_NOISE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
-
+_MIN_EMBEDDED_BASE64_LEN = 32
 _PLAINTEXT_KEYWORDS = {
     "powershell",
     "hidden",
@@ -141,11 +143,14 @@ def _find_embedded_candidate(buffer: str) -> Optional[str]:
     # try to find long base64-like substrings first
     b64_candidates = re.findall(r"[A-Za-z0-9+/]{12,}={0,2}", buffer)
     if b64_candidates:
-        # prefer the longest candidate that decodes cleanly
         b64_candidates.sort(key=len, reverse=True)
         for cand in b64_candidates:
             stripped = re.sub(r"\s+", "", cand)
-            if len(stripped) % 4 == 0 and _RX_BASE64_STRICT.match(stripped):
+            if (
+                len(stripped) >= _MIN_EMBEDDED_BASE64_LEN
+                and _RX_BASE64_STRICT.match(stripped)
+                and re.search(r"[+/=]", stripped)
+            ):
                 return cand
 
     # next try percent-encoded sequences
@@ -156,7 +161,6 @@ def _find_embedded_candidate(buffer: str) -> Optional[str]:
     # finally try long hex runs
     hex_candidates = re.findall(r"[0-9A-Fa-f]{8,}", buffer)
     if hex_candidates:
-        # pick the longest
         hex_candidates.sort(key=len, reverse=True)
         return hex_candidates[0]
 
@@ -169,9 +173,15 @@ def _decode_base64(payload: str) -> str:
     try:
         stripped = re.sub(r"\s+", "", payload)
         raw = base64.b64decode(stripped, validate=True)
+        if raw.startswith(b"\x1f\x8b"):
+            try:
+                decompressed = gzip.decompress(raw)
+                return decompressed.decode("utf-8", errors="strict")
+            except (zlib.error, OSError, UnicodeDecodeError) as exc:
+                raise _SkipLayer(f"gzip base64 failed: {exc}")
         decoded = raw.decode("utf-8", errors="strict")
         return decoded
-    except (binascii.Error, UnicodeDecodeError) as exc:
+    except (binascii.Error, UnicodeDecodeError, zlib.error) as exc:
         raise _SkipLayer(f"base64 failed: {exc}")
 
 
@@ -303,6 +313,7 @@ class CascadeDecoder:
         # If the input looks like a larger log blob, try to extract an embedded
         # encoded candidate (base64/percent-enc/hex) so decoders can operate on it.
         candidate = _find_embedded_candidate(raw_data)
+        candidate_extracted = False
         if candidate and candidate != raw_data:
             elapsed_ms = 0.0
             timeline.append({
@@ -322,6 +333,7 @@ class CascadeDecoder:
             })
             current = candidate
             seen_fingerprints = {hash(current)}
+            candidate_extracted = True
 
         pipeline_start = time.perf_counter()
 
@@ -393,6 +405,17 @@ class CascadeDecoder:
                 break
             if not layer_advanced:
                 break
+
+        if candidate_extracted and not recipe_path:
+            current = raw_data
+            if timeline:
+                timeline[0].update({
+                    "candidate_extraction": "failed_to_decode",
+                })
+            recipe_path = []
+            pipeline_finalized = False
+            plaintext_gate_reason = None
+            seen_fingerprints = {hash(current)}
 
         total_ms = round((time.perf_counter() - pipeline_start) * 1000, 4)
         final_entropy = shannon_entropy(current)
